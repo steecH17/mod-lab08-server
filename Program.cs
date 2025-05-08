@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Threading;
+using System.IO;
+using System.Text;
 
 namespace MultiChannelCMO
 {
@@ -7,62 +9,84 @@ namespace MultiChannelCMO
     {
         static void Main(string[] args)
         {
-            // Параметры системы
-            int n = 3;                   // Количество каналов
-            double lambda = 0.5;         // Интенсивность потока заявок
-            double mu = 0.2;             // Интенсивность обслуживания
-            int totalRequests = 20;     // Количество заявок для статистики
-
-            Server server = new Server(n, mu);
-            Client client = new Client(server);
-
-            Console.WriteLine($"Моделирование {n}-канальной СМО с отказами");
-            Console.WriteLine($"λ = {lambda}, μ = {mu}, ρ = {lambda/mu:F2}\n");
-
-            // Моделирование
-            for (int id = 1; id <= totalRequests; id++)
-            {
-                Console.WriteLine($"[{DateTime.Now:T}] Клиент #{id} отправляет запрос");
-
-                client.Send(id);
-                Thread.Sleep((int)(1000 / lambda));
-            }
-
-            // Ожидание завершения обработки
-            while (server.GetBusyChannelsCount() > 0)
-            {
-                Thread.Sleep(100);
-            }
-
-            // Экспериментальные показатели
-            double expP0 = (double)server.IdleTime / server.TotalTime;
-            double expPn = (double)server.RejectedCount / server.RequestCount;
-            double expQ = (double)server.ProcessedCount / server.RequestCount;
-            double expA = lambda * expQ;
-            double expK = server.TotalBusyTime / (server.TotalTime * mu);
-
-            // Теоретические показатели (из лекции)
-            double rho = lambda / mu;
-            double P0 = CalculateP0(rho, n);
-            double Pn = (Math.Pow(rho, n) / Factorial(n)) * P0;
-            double Q = 1 - Pn;
-            double A = lambda * Q;
-            double k = rho * (1 - Pn);
+            RunExperiments();
+            Console.WriteLine("Эксперименты проведены успешно! Данные записаны в файл data.txt");
 
             // Вывод результатов
-            Console.WriteLine("\nРезультаты моделирования:");
-            Console.WriteLine($"Всего заявок: {server.RequestCount}");
-            Console.WriteLine($"Обслужено: {server.ProcessedCount} (эксп. Q = {expQ:F4})");
-            Console.WriteLine($"Отклонено: {server.RejectedCount} (эксп. Pn = {expPn:F4})");
+            // Console.WriteLine("\nРезультаты моделирования:");
+            // Console.WriteLine($"Всего заявок: {server.RequestCount}");
+            // Console.WriteLine($"Обслужено: {server.ProcessedCount} (эксп. Q = {expQ:F4})");
+            // Console.WriteLine($"Отклонено: {server.RejectedCount} (эксп. Pn = {expPn:F4})");
 
-            Console.WriteLine("\nСравнение показателей:");
-            Console.WriteLine("| Показатель               | Теория  | Эксперимент | Отклонение |");
-            Console.WriteLine("|--------------------------|---------|-------------|------------|");
-            PrintComparison("Вероятность простоя (P0)", P0, expP0);
-            PrintComparison("Вероятность отказа (Pn)", Pn, expPn);
-            PrintComparison("Отн. пропуск. способ. (Q)", Q, expQ);
-            PrintComparison("Абс. пропуск. способ. (A)", A, expA);
-            PrintComparison("Ср. число занятых каналов (k)", k, expK);
+            // Console.WriteLine("\nСравнение показателей:");
+            // Console.WriteLine("| Показатель               | Теория  | Эксперимент | Отклонение |");
+            // Console.WriteLine("|--------------------------|---------|-------------|------------|");
+            // PrintComparison("Вероятность простоя (P0)", P0, expP0);
+            // PrintComparison("Вероятность отказа (Pn)", Pn, expPn);
+            // PrintComparison("Отн. пропуск. способ. (Q)", Q, expQ);
+            // PrintComparison("Абс. пропуск. способ. (A)", A, expA);
+            // PrintComparison("Ср. число занятых каналов (k)", k, expK);
+            // SaveResultsToFile(lambda, mu, 
+            //                     P0, Pn, Q, A, k,
+            //                     expP0, expPn, expQ, expA, expK);
+        }
+
+        static void RunExperiments()
+        {
+            const double mu = 1.0; // Фиксированная интенсивность обслуживания
+            const int n = 5; // Количество каналов
+            const int totalRequests = 20; // Количество заявок 
+            const double minLambda = 0.5;
+            const double maxLambda = 8.0;
+            const double lambdaStep = 0.5;
+
+            for (double lambda = minLambda; lambda <= maxLambda; lambda += lambdaStep)
+            {
+                Console.WriteLine($"\nЭксперимент: λ = {lambda:F1}, μ = {mu:F1}");
+
+                Server server = new Server(n, mu);
+                Client client = new Client(server);
+
+                for (int id = 1; id <= totalRequests; id++)
+                {
+                    client.Send(id);
+                    Thread.Sleep((int)(1000 / lambda));
+                }
+
+                while (server.GetBusyChannelsCount() > 0)
+                {
+                    Thread.Sleep(100);
+                }
+
+                double rho = lambda / mu;
+                double P0 = CalculateP0(rho, n);
+                double Pn = (Math.Pow(rho, n) / Factorial(n)) * P0;
+                double Q = 1 - Pn;
+                double A = lambda * Q;
+                double k = rho * (1 - Pn);
+
+                double expP0 = (double)server.IdleTime / server.TotalTime;
+                double expPn = (double)server.RejectedCount / server.RequestCount;
+                double expQ = (double)server.ProcessedCount / server.RequestCount;
+                double expA = lambda * expQ;
+                double expK = server.TotalBusyTime / (server.TotalTime * mu);
+
+                SaveResultsToFile(lambda, mu, 
+                                P0, Pn, Q, A, k,
+                                expP0, expPn, expQ, expA, expK);
+            }
+        }
+
+        static void SaveResultsToFile(double lambda, double mu,
+                                    double P0, double Pn, double Q, double A, double k,
+                                    double expP0, double expPn, double expQ, double expA, double expK)
+        {
+            string data = $"{lambda} {mu} {P0:F4} {Pn:F4} {Q:F4} {A:F4} {k:F4} " +
+                         $"{expP0:F4} {expPn:F4} {expQ:F4} {expA:F4} {expK:F4}";
+
+            string dataPath = Path.Combine(Environment.CurrentDirectory, "data.txt");
+
+            File.AppendAllText(dataPath, data + Environment.NewLine);
         }
 
         static void PrintComparison(string name, double theory, double experiment)
@@ -91,7 +115,7 @@ namespace MultiChannelCMO
     {
         private PoolRecord[] pool;
         private object statsLock = new object();
-        private DateTime[] startTimes; // Отдельный массив для хранения времени начала обработки
+        private DateTime[] startTimes;
         public int RequestCount { get; private set; }
         public int ProcessedCount { get; private set; }
         public int RejectedCount { get; private set; }
@@ -117,7 +141,6 @@ namespace MultiChannelCMO
                 TotalTime = (DateTime.Now - systemStartTime).TotalSeconds;
                 Console.WriteLine($"[{DateTime.Now:T}] Заявка #{e.Id} поступила на сервер");
 
-                // Фиксируем время простоя
                 if (GetBusyChannelsCount() == 0)
                     IdleTime += (DateTime.Now - systemStartTime).TotalSeconds - TotalTime;
 
@@ -127,7 +150,7 @@ namespace MultiChannelCMO
                     {
                         pool[i].InUse = true;
                         pool[i].Thread = new Thread(HandleRequest!);
-                        startTimes[i] = DateTime.Now; // Сохраняем время начала обработки
+                        startTimes[i] = DateTime.Now;
                         pool[i].Thread.Start(e.Id);
                         ProcessedCount++;
                          Console.WriteLine($"[{DateTime.Now:T}] Заявка #{e.Id} принята в канал {i+1}");
@@ -147,7 +170,6 @@ namespace MultiChannelCMO
             int channelIndex = -1;
             Console.WriteLine($"[{DateTime.Now:T}] Начата обработка заявки #{id}");
             
-            // Находим индекс текущего потока в пуле
             lock (statsLock)
             {
                 for (int i = 0; i < pool.Length; i++)
@@ -160,7 +182,6 @@ namespace MultiChannelCMO
                 }
             }
 
-            // Имитация обработки
             Thread.Sleep((int)(1000 / mu));
 
             lock (statsLock)
